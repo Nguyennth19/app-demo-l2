@@ -1,0 +1,573 @@
+<script>
+/* ═══════════════════════════════════════════════════════════
+   Toán Lớp 2 · ứng dụng luyện tập
+   ═══════════════════════════════════════════════════════════ */
+(function () {
+  'use strict';
+
+  const { TOPICS, buildRound } = window.ToanQuestions;
+
+  const STORAGE_KEY = 'toan2-progress-v1';
+  const ROUND_SIZE = 10;
+  const LEVELS = [
+    { id: 1, icon: '🌱', label: 'Dễ', note: 'Số đến 100, chưa nhớ' },
+    { id: 2, icon: '🌟', label: 'Vừa', note: 'Số đến 1000, có nhớ' },
+    { id: 3, icon: '🚀', label: 'Khó', note: 'Nhiều bước tính hơn' },
+  ];
+  const MIXED = {
+    id: 'hon-hop', name: 'Luyện tổng hợp', icon: '🎯', tone: 'rainbow',
+    desc: 'Trộn đều các chủ đề trong một lượt',
+  };
+  const KEYPAD = ['1', '2', '3', '4', '5', '6', '7', '8', '9', 'clear', '0', 'back'];
+
+  const $ = (sel, root) => (root || document).querySelector(sel);
+
+  let progress = loadProgress();
+  const state = {
+    level: progress.level || 2,
+    round: null,
+    input: '',
+    checked: false,
+    hintShown: false,
+  };
+
+  /* ─────────── lưu tiến độ ─────────── */
+  function defaultProgress() {
+    return { stars: 0, answered: 0, correct: 0, level: 2, sound: true, topics: {} };
+  }
+
+  function loadProgress() {
+    try {
+      const raw = window.localStorage.getItem(STORAGE_KEY);
+      if (!raw) return defaultProgress();
+      const saved = JSON.parse(raw);
+      const data = Object.assign(defaultProgress(), saved || {});
+      data.topics = (saved && saved.topics) || {};
+      return data;
+    } catch (err) {
+      return defaultProgress();
+    }
+  }
+
+  function saveProgress() {
+    try {
+      window.localStorage.setItem(STORAGE_KEY, JSON.stringify(progress));
+    } catch (err) {
+      /* trình duyệt chặn lưu trữ thì bỏ qua */
+    }
+  }
+
+  /* ─────────── âm thanh ─────────── */
+  let audioCtx = null;
+
+  function ensureAudio() {
+    const AC = window.AudioContext || window.webkitAudioContext;
+    if (!AC) return null;
+    if (!audioCtx) audioCtx = new AC();
+    if (audioCtx.state === 'suspended') audioCtx.resume();
+    return audioCtx;
+  }
+
+  function tone(freq, delay, dur, type, volume) {
+    const ctx = audioCtx;
+    const start = ctx.currentTime + delay;
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.type = type || 'sine';
+    osc.frequency.setValueAtTime(freq, start);
+    gain.gain.setValueAtTime(0.0001, start);
+    gain.gain.linearRampToValueAtTime(volume || 0.12, start + 0.02);
+    gain.gain.exponentialRampToValueAtTime(0.0001, start + dur);
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    osc.start(start);
+    osc.stop(start + dur + 0.02);
+  }
+
+  function playCorrect() {
+    if (!progress.sound || !ensureAudio()) return;
+    tone(660, 0, 0.14, 'sine', 0.11);
+    tone(988, 0.11, 0.2, 'sine', 0.1);
+  }
+
+  function playWrong() {
+    if (!progress.sound || !ensureAudio()) return;
+    tone(320, 0, 0.16, 'triangle', 0.09);
+    tone(210, 0.16, 0.24, 'triangle', 0.09);
+  }
+
+  function playFinish() {
+    if (!progress.sound || !ensureAudio()) return;
+    tone(523, 0, 0.16, 'sine', 0.1);
+    tone(659, 0.14, 0.16, 'sine', 0.1);
+    tone(784, 0.28, 0.26, 'sine', 0.1);
+  }
+
+  /* ─────────── điều hướng màn hình ─────────── */
+  function showScreen(name) {
+    ['home', 'practice', 'result', 'handbook'].forEach((key) => {
+      const el = $('#screen-' + key);
+      if (el) el.classList.toggle('is-active', key === name);
+    });
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }
+
+  function updateStarPill() {
+    const el = $('#starCount');
+    if (el) el.textContent = String(progress.stars);
+  }
+
+  function updateSoundBtn() {
+    const btn = $('#soundBtn');
+    if (!btn) return;
+    btn.textContent = progress.sound ? '🔊' : '🔇';
+    btn.setAttribute('aria-pressed', String(progress.sound));
+    btn.title = progress.sound ? 'Tắt âm thanh' : 'Bật âm thanh';
+  }
+
+  function topicInfo(id) {
+    if (id === MIXED.id) return MIXED;
+    return TOPICS.find((t) => t.id === id) || MIXED;
+  }
+
+  /* ─────────── trang chủ ─────────── */
+  function renderLevelChips() {
+    const box = $('#levelChips');
+    if (!box) return;
+    box.innerHTML = '';
+    LEVELS.forEach((lv) => {
+      const active = state.level === lv.id;
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'level-chip' + (active ? ' is-active' : '');
+      btn.setAttribute('role', 'radio');
+      btn.setAttribute('aria-checked', String(active));
+      btn.innerHTML = '<span class="lvl-icon" aria-hidden="true">' + lv.icon + '</span>'
+        + '<span class="lvl-label">' + lv.label + '</span>'
+        + '<span class="lvl-note">' + lv.note + '</span>';
+      btn.addEventListener('click', () => {
+        state.level = lv.id;
+        progress.level = lv.id;
+        saveProgress();
+        renderLevelChips();
+      });
+      box.appendChild(btn);
+    });
+  }
+
+  function renderTopics() {
+    const grid = $('#topicGrid');
+    if (!grid) return;
+    grid.innerHTML = '';
+    TOPICS.concat([MIXED]).forEach((topic) => {
+      const record = progress.topics[topic.id] || { best: 0 };
+      const stars = Math.max(0, Math.min(3, record.best || 0));
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'topic-card tone-' + topic.tone;
+      btn.setAttribute('data-topic', topic.id);
+      btn.innerHTML = '<span class="topic-icon" aria-hidden="true">' + topic.icon + '</span>'
+        + '<span class="topic-text">'
+        + '<span class="topic-name">' + topic.name + '</span>'
+        + '<span class="topic-desc">' + topic.desc + '</span>'
+        + '<span class="topic-stars" aria-label="' + stars + ' trên 3 sao">'
+        + '★'.repeat(stars) + '☆'.repeat(3 - stars) + '</span>'
+        + '</span>'
+        + '<span class="topic-go" aria-hidden="true">›</span>';
+      btn.addEventListener('click', () => startRound(topic.id));
+      grid.appendChild(btn);
+    });
+  }
+
+  /* ─────────── bàn phím số ─────────── */
+  function buildKeypad() {
+    const pad = $('#keypad');
+    if (!pad) return;
+    pad.innerHTML = '';
+    KEYPAD.forEach((key) => {
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'key' + (key === 'clear' || key === 'back' ? ' is-utility' : '');
+      btn.textContent = key === 'clear' ? 'Xoá' : key === 'back' ? '⌫' : key;
+      btn.setAttribute('aria-label', key === 'clear' ? 'Xoá hết' : key === 'back' ? 'Xoá một chữ số' : 'Số ' + key);
+      btn.addEventListener('click', () => pressKey(key));
+      pad.appendChild(btn);
+    });
+  }
+
+  function pressKey(key) {
+    if (state.checked || !state.round) return;
+    if (key === 'clear') state.input = '';
+    else if (key === 'back') state.input = state.input.slice(0, -1);
+    else if (state.input.length < 4) state.input = (state.input === '0' ? '' : state.input) + key;
+    updateAnswerDisplay();
+  }
+
+  function updateAnswerDisplay() {
+    const box = $('#answerDisplay');
+    if (!box) return;
+    if (state.input) {
+      box.textContent = state.input;
+    } else {
+      box.innerHTML = '<span class="placeholder">Nhập đáp án</span>';
+    }
+    const btn = $('#checkBtn');
+    if (btn) {
+      const isInput = state.round && state.round.questions[state.round.index]
+        && state.round.questions[state.round.index].type === 'input';
+      btn.disabled = Boolean(isInput) && state.input === '';
+    }
+  }
+
+  /* ─────────── lượt luyện tập ─────────── */
+  function startRound(topicId) {
+    const questions = buildRound(topicId, state.level, ROUND_SIZE);
+    state.round = {
+      topicId: topicId,
+      level: state.level,
+      questions: questions,
+      index: 0,
+      correct: 0,
+      results: [],
+      finished: false,
+    };
+    const info = topicInfo(topicId);
+    $('#practiceTopic').textContent = info.icon + ' ' + info.name;
+    const levelInfo = LEVELS.find((l) => l.id === state.level) || LEVELS[1];
+    $('#practiceLevel').textContent = levelInfo.label;
+    $('#scoreCorrect').textContent = '0';
+    renderQuestion();
+    showScreen('practice');
+  }
+
+  function renderQuestion() {
+    const round = state.round;
+    if (!round) return;
+    const q = round.questions[round.index];
+    state.input = '';
+    state.checked = false;
+    state.hintShown = false;
+
+    $('#qLabel').textContent = 'Câu ' + (round.index + 1);
+    $('#qTotal').textContent = '/ ' + round.questions.length;
+    $('#qPrompt').textContent = q.prompt;
+    $('#qVisual').innerHTML = q.visual || '';
+    $('#progressBar').style.width = (round.index / round.questions.length * 100) + '%';
+    $('#progressWrap').setAttribute('aria-valuenow', String(round.index));
+
+    const fb = $('#feedback');
+    fb.hidden = true;
+    fb.classList.remove('is-wrong');
+    $('#hintBox').hidden = true;
+    $('#hintBtn').textContent = '💡 Gợi ý';
+    $('#hintBtn').disabled = false;
+
+    const isChoice = q.type === 'choice';
+    $('#choiceArea').hidden = !isChoice;
+    $('#inputArea').hidden = isChoice;
+    $('#checkBtn').hidden = isChoice;
+
+    if (isChoice) renderChoices(q);
+    else updateAnswerDisplay();
+  }
+
+  function renderChoices(q) {
+    const box = $('#choiceArea');
+    box.innerHTML = '';
+    box.classList.remove('is-locked');
+    q.options.forEach((opt) => {
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'choice';
+      btn.textContent = opt;
+      btn.addEventListener('click', () => checkAnswer(opt));
+      box.appendChild(btn);
+    });
+  }
+
+  function checkAnswer(given) {
+    const round = state.round;
+    if (!round || state.checked) return;
+    const q = round.questions[round.index];
+    const ok = q.type === 'input'
+      ? given !== '' && Number(given) === Number(q.answer)
+      : given === q.answer;
+
+    state.checked = true;
+    round.results.push({ q: q, given: String(given), ok: ok });
+    progress.answered += 1;
+    if (ok) {
+      round.correct += 1;
+      progress.correct += 1;
+      playCorrect();
+    } else {
+      playWrong();
+    }
+    saveProgress();
+    $('#scoreCorrect').textContent = String(round.correct);
+    markAnswer(q, given);
+    showFeedback(q, given, ok);
+  }
+
+  function markAnswer(q, given) {
+    if (q.type === 'choice') {
+      const box = $('#choiceArea');
+      box.classList.add('is-locked');
+      Array.from(box.children).forEach((btn) => {
+        const value = btn.textContent;
+        if (value === q.answer) btn.classList.add('is-correct');
+        else if (value === given) btn.classList.add('is-wrong');
+        btn.disabled = true;
+      });
+    } else {
+      const btn = $('#checkBtn');
+      if (btn) btn.disabled = true;
+    }
+  }
+
+  function showFeedback(q, given, ok) {
+    const fb = $('#feedback');
+    fb.hidden = false;
+    fb.classList.toggle('is-wrong', !ok);
+    $('#feedbackIcon').textContent = ok ? '🎉' : '🤔';
+    $('#feedbackTitle').textContent = ok ? 'Chính xác!' : 'Chưa đúng rồi!';
+
+    if (q.type === 'input') {
+      $('#feedbackAnswer').textContent = ok
+        ? 'Đáp án: ' + q.answer
+        : 'Con trả lời ' + given + '. Đáp án đúng là ' + q.answer + '.';
+    } else {
+      $('#feedbackAnswer').textContent = ok
+        ? 'Đáp án: ' + q.answer
+        : 'Đáp án đúng là “' + q.answer + '”.';
+    }
+    $('#feedbackExplain').textContent = q.explanation || '';
+
+    const isLast = state.round.index === state.round.questions.length - 1;
+    $('#nextBtn').textContent = isLast ? 'Xem kết quả 🏁' : 'Câu tiếp theo →';
+    $('#hintBtn').disabled = true;
+    fb.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  }
+
+  function toggleHint() {
+    const round = state.round;
+    if (!round || state.checked) return;
+    const q = round.questions[round.index];
+    const box = $('#hintBox');
+    box.hidden = false;
+    box.textContent = q.hint || 'Đọc kỹ đề bài rồi làm từng bước nhé.';
+    $('#hintBtn').textContent = 'Đã xem gợi ý';
+    $('#hintBtn').disabled = true;
+  }
+
+  function nextQuestion() {
+    const round = state.round;
+    if (!round) return;
+    if (round.index >= round.questions.length - 1) {
+      finishRound();
+      return;
+    }
+    round.index += 1;
+    renderQuestion();
+  }
+
+  /* ─────────── kết quả ─────────── */
+  function finishRound() {
+    const round = state.round;
+    if (!round || round.finished) return;
+    round.finished = true;
+    const total = round.questions.length;
+    const accuracy = total ? round.correct / total : 0;
+    const stars = accuracy >= 0.9 ? 3 : accuracy >= 0.7 ? 2 : accuracy >= 0.5 ? 1 : 0;
+
+    progress.stars += stars;
+    const record = progress.topics[round.topicId] || { best: 0, plays: 0 };
+    record.best = Math.max(record.best || 0, stars);
+    record.plays = (record.plays || 0) + 1;
+    record.lastAccuracy = Math.round(accuracy * 100);
+    progress.topics[round.topicId] = record;
+    saveProgress();
+    updateStarPill();
+    renderTopics();
+    $('#progressBar').style.width = '100%';
+    renderResult(stars, accuracy);
+    playFinish();
+    showScreen('result');
+  }
+
+  function escapeHtml(value) {
+    return String(value)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;');
+  }
+
+  function renderResult(stars, accuracy) {
+    const round = state.round;
+    const total = round.questions.length;
+    const info = topicInfo(round.topicId);
+    const levelInfo = LEVELS.find((l) => l.id === round.level) || LEVELS[1];
+
+    const starBox = $('#resultStars');
+    starBox.innerHTML = '';
+    for (let i = 0; i < 3; i++) {
+      const span = document.createElement('span');
+      span.textContent = '⭐';
+      if (i >= stars) span.className = 'off';
+      span.style.animationDelay = (i * 0.12) + 's';
+      starBox.appendChild(span);
+    }
+
+    const titles = ['Cố lên nào!', 'Khá tốt!', 'Rất tốt!', 'Xuất sắc!'];
+    $('#resultTitle').textContent = titles[stars];
+    $('#resultSub').textContent = info.name + ' · Mức ' + levelInfo.label
+      + ' · Đúng ' + round.correct + '/' + total + ' câu (' + Math.round(accuracy * 100) + '%).';
+
+    $('#resultStats').innerHTML =
+      '<div class="stat"><span class="stat-value">' + round.correct + '</span><span class="stat-label">câu đúng</span></div>'
+      + '<div class="stat"><span class="stat-value">' + (total - round.correct) + '</span><span class="stat-label">câu sai</span></div>'
+      + '<div class="stat"><span class="stat-value">' + Math.round(accuracy * 100) + '%</span><span class="stat-label">chính xác</span></div>';
+
+    const misses = round.results.filter((item) => !item.ok);
+    const review = $('#resultReview');
+    if (!misses.length) {
+      review.innerHTML = '<p class="perfect">🌟 Con làm đúng tất cả các câu. Tuyệt vời!</p>';
+    } else {
+      review.innerHTML = '<h3>Xem lại những câu chưa đúng</h3><ul>'
+        + misses.map((item) => '<li><p class="rv-q">' + escapeHtml(item.q.prompt)
+          + '</p><p class="rv-a">Đáp án: ' + escapeHtml(item.q.answer) + '</p></li>').join('')
+        + '</ul>';
+    }
+  }
+
+  /* ─────────── sổ tay kiến thức ─────────── */
+  function renderHandbook() {
+    const body = $('#handbookBody');
+    if (!body) return;
+    const tables = [2, 3, 4, 5];
+
+    const nhanCards = tables.map((t) => {
+      let rows = '';
+      for (let i = 1; i <= 10; i++) {
+        rows += '<li><span>' + t + ' × ' + i + '</span><b>' + (t * i) + '</b></li>';
+      }
+      return '<div class="mini-card"><h4>Bảng nhân ' + t + '</h4><ul>' + rows + '</ul></div>';
+    }).join('');
+
+    const chiaCards = tables.map((t) => {
+      let rows = '';
+      for (let i = 1; i <= 10; i++) {
+        rows += '<li><span>' + (t * i) + ' : ' + t + '</span><b>' + i + '</b></li>';
+      }
+      return '<div class="mini-card"><h4>Bảng chia ' + t + '</h4><ul>' + rows + '</ul></div>';
+    }).join('');
+
+    body.innerHTML = '<section class="hand-section">'
+      + '<h3>✖️ Bảng nhân 2, 3, 4, 5</h3><div class="table-grid">' + nhanCards + '</div></section>'
+      + '<section class="hand-section"><h3>➗ Bảng chia 2, 3, 4, 5</h3>'
+      + '<div class="table-grid">' + chiaCards + '</div></section>'
+      + '<section class="hand-section"><h3>📏 Đơn vị đo</h3><ul class="fact-list">'
+      + '<li><b>1 m</b> = 10 dm = 100 cm = 1000 mm</li>'
+      + '<li><b>1 km</b> = 1000 m · <b>1 cm</b> = 10 mm</li>'
+      + '<li><b>1 kg</b> = 1000 g · <b>1 l</b> là một lít</li>'
+      + '</ul></section>'
+      + '<section class="hand-section"><h3>⏰ Thời gian và tiền Việt Nam</h3><ul class="fact-list">'
+      + '<li><b>1 giờ</b> = 60 phút · <b>1 ngày</b> = 24 giờ · <b>1 tuần</b> = 7 ngày</li>'
+      + '<li>Tháng có 30 ngày: 4, 6, 9, 11. Tháng có 31 ngày: 1, 3, 5, 7, 8, 10, 12.</li>'
+      + '<li>Các tờ tiền thường dùng: 1000 đồng, 2000 đồng, 5000 đồng.</li>'
+      + '</ul></section>'
+      + '<section class="hand-section"><h3>🔺 Hình học</h3><ul class="fact-list">'
+      + '<li>Hình tam giác: 3 cạnh, 3 đỉnh. Hình tứ giác: 4 cạnh, 4 đỉnh.</li>'
+      + '<li>Hình chữ nhật: 4 góc vuông, hai cạnh dài bằng nhau, hai cạnh ngắn bằng nhau.</li>'
+      + '<li>Hình vuông: 4 cạnh bằng nhau, 4 góc vuông.</li>'
+      + '<li>Khối lập phương và khối hộp chữ nhật đều có 6 mặt.</li>'
+      + '</ul></section>'
+      + '<div class="hand-danger"><p>Tiến độ được lưu trên chính thiết bị này.</p>'
+      + '<button class="danger-btn" id="resetProgress" type="button">Xoá tiến độ học</button></div>';
+
+    const reset = $('#resetProgress');
+    if (reset) {
+      reset.addEventListener('click', () => {
+        const yes = window.confirm('Con chắc chắn muốn xoá toàn bộ sao và tiến độ đã học?');
+        if (!yes) return;
+        progress = defaultProgress();
+        state.level = progress.level;
+        saveProgress();
+        updateStarPill();
+        renderLevelChips();
+        renderTopics();
+        showScreen('home');
+      });
+    }
+  }
+
+  /* ─────────── khởi động ─────────── */
+  function goHome() {
+    if (state.round && !state.round.finished) {
+      const leave = window.confirm('Thoát lượt luyện tập này? Kết quả chưa hoàn thành sẽ không được tính sao.');
+      if (!leave) return;
+    }
+    state.round = null;
+    showScreen('home');
+  }
+
+  function init() {
+    buildKeypad();
+    renderLevelChips();
+    renderTopics();
+    updateStarPill();
+    updateSoundBtn();
+
+    $('#brandBtn').addEventListener('click', goHome);
+    $('#soundBtn').addEventListener('click', () => {
+      progress.sound = !progress.sound;
+      saveProgress();
+      updateSoundBtn();
+      if (progress.sound) playCorrect();
+    });
+    $('#handbookBtn').addEventListener('click', () => {
+      renderHandbook();
+      showScreen('handbook');
+    });
+    $('#handbookBack').addEventListener('click', () => showScreen('home'));
+    $('#quitBtn').addEventListener('click', goHome);
+    $('#checkBtn').addEventListener('click', () => checkAnswer(state.input));
+    $('#hintBtn').addEventListener('click', toggleHint);
+    $('#nextBtn').addEventListener('click', nextQuestion);
+    $('#againBtn').addEventListener('click', () => {
+      if (!state.round) {
+        showScreen('home');
+        return;
+      }
+      const topicId = state.round.topicId;
+      state.round = null;
+      startRound(topicId);
+    });
+    $('#homeBtn').addEventListener('click', () => {
+      state.round = null;
+      showScreen('home');
+    });
+
+    document.addEventListener('keydown', (event) => {
+      const practice = $('#screen-practice');
+      if (!practice || !practice.classList.contains('is-active') || !state.round) return;
+      const q = state.round.questions[state.round.index];
+      if (!q || q.type !== 'input' || state.checked) return;
+      if (/^[0-9]$/.test(event.key)) {
+        pressKey(event.key);
+        event.preventDefault();
+      } else if (event.key === 'Backspace') {
+        pressKey('back');
+        event.preventDefault();
+      } else if (event.key === 'Enter' && state.input !== '') {
+        checkAnswer(state.input);
+        event.preventDefault();
+      }
+    });
+  }
+
+  init();
+})();
+
+</script>

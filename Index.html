@@ -1,0 +1,135 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8" />
+  <base target="_top" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Toán Lớp 2 · Luyện tập theo sách giáo khoa</title>
+  <meta name="description" content="Luyện Toán lớp 2 theo chương trình sách giáo khoa Việt Nam: số và chữ số, cộng trừ có nhớ, bảng nhân chia 2–5, đo lường, hình học và toán có lời văn." />
+  <meta name="theme-color" content="#f5f3ff" />
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E%F0%9F%A7%AE%3C/text%3E%3C/svg%3E" />
+  <?!= include('Styles') ?>
+</head>
+<body>
+  <div class="blobs" aria-hidden="true">
+    <span class="blob b1"></span><span class="blob b2"></span><span class="blob b3"></span>
+  </div>
+
+  <header class="topbar">
+    <button class="brand" id="brandBtn" type="button" aria-label="Về trang chủ">
+      <span class="brand-mark" aria-hidden="true">🧮</span>
+      <span class="brand-text"><strong>Toán Lớp 2</strong><small>Luyện tập theo SGK</small></span>
+    </button>
+    <div class="top-actions">
+      <div class="pill" title="Số sao đã nhận"><span aria-hidden="true">⭐</span><span id="starCount">0</span></div>
+      <button class="icon-btn" id="soundBtn" type="button" aria-pressed="true" title="Bật hoặc tắt âm thanh">🔊</button>
+    </div>
+  </header>
+
+  <main class="wrap">
+    <!-- ══════════ TRANG CHỦ ══════════ -->
+    <section class="screen is-active" id="screen-home">
+      <div class="hero">
+        <div class="hero-text">
+          <p class="eyebrow">Chương trình Toán lớp 2 · Việt Nam</p>
+          <h1>Hôm nay mình học Toán nhé!</h1>
+          <p class="lede">Chọn một chủ đề, làm 10 câu, nhận sao thưởng. Câu nào chưa đúng đều có gợi ý và lời giải chi tiết.</p>
+        </div>
+        <div class="hero-art" aria-hidden="true">
+          <span class="ha ha1">➕</span>
+          <span class="ha ha2">✖️</span>
+          <span class="ha ha3">➗</span>
+          <span class="ha ha4">📏</span>
+        </div>
+      </div>
+
+      <div class="card level-card">
+        <div class="card-head">
+          <h2>Mức độ luyện tập</h2>
+          <p>Chọn mức phù hợp với con. Mức càng cao, số càng lớn và có thêm bước tính.</p>
+        </div>
+        <div class="level-chips" id="levelChips" role="radiogroup" aria-label="Mức độ luyện tập"></div>
+      </div>
+
+      <div class="section-head">
+        <h2>Chọn chủ đề</h2>
+        <button class="link-btn" id="handbookBtn" type="button">📚 Sổ tay kiến thức</button>
+      </div>
+      <div class="topic-grid" id="topicGrid"></div>
+
+      <p class="home-note">Mỗi lượt gồm 10 câu hỏi mới, bám theo các mạch kiến thức của sách giáo khoa: số và phép tính, đại lượng và đo đại lượng, hình học, giải toán có lời văn.</p>
+    </section>
+
+    <!-- ══════════ LUYỆN TẬP ══════════ -->
+    <section class="screen" id="screen-practice">
+      <div class="practice-head">
+        <button class="ghost-btn" id="quitBtn" type="button">← Thoát</button>
+        <div class="practice-meta">
+          <span id="practiceTopic">Chủ đề</span>
+          <span class="dot" aria-hidden="true">•</span>
+          <span id="practiceLevel">Vừa</span>
+        </div>
+        <div class="score-pill"><span id="scoreCorrect">0</span> đúng</div>
+      </div>
+      <div class="progress" role="progressbar" aria-label="Tiến độ lượt luyện tập" aria-valuemin="0" aria-valuemax="10" aria-valuenow="0" id="progressWrap">
+        <div class="progress-bar" id="progressBar"></div>
+      </div>
+
+      <div class="practice-body">
+        <article class="card question-card">
+          <p class="q-label"><span id="qLabel">Câu 1</span><span class="q-total" id="qTotal">/ 10</span></p>
+          <p class="q-prompt" id="qPrompt"></p>
+          <div class="q-visual" id="qVisual" aria-hidden="true"></div>
+        </article>
+
+        <aside class="card answer-card">
+          <div class="choices" id="choiceArea"></div>
+          <div class="input-area" id="inputArea">
+            <div class="answer-display" id="answerDisplay"><span class="placeholder">Nhập đáp án</span></div>
+            <div class="keypad" id="keypad"></div>
+          </div>
+          <div class="answer-actions">
+            <button class="btn btn-primary" id="checkBtn" type="button">Kiểm tra</button>
+            <button class="btn btn-ghost" id="hintBtn" type="button">💡 Gợi ý</button>
+          </div>
+          <div class="hint-box" id="hintBox" hidden></div>
+        </aside>
+
+        <div class="feedback" id="feedback" role="status" aria-live="polite" hidden>
+          <div class="feedback-head"><span id="feedbackIcon" aria-hidden="true">🎉</span><span id="feedbackTitle">Chính xác!</span></div>
+          <p class="feedback-answer" id="feedbackAnswer"></p>
+          <p class="feedback-explain" id="feedbackExplain"></p>
+          <button class="btn btn-primary" id="nextBtn" type="button">Câu tiếp theo →</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- ══════════ KẾT QUẢ ══════════ -->
+    <section class="screen" id="screen-result">
+      <div class="card result-card">
+        <div class="result-stars" id="resultStars" aria-hidden="true"></div>
+        <h2 id="resultTitle">Hoàn thành!</h2>
+        <p class="result-sub" id="resultSub"></p>
+        <div class="result-stats" id="resultStats"></div>
+        <div class="result-review" id="resultReview"></div>
+        <div class="result-actions">
+          <button class="btn btn-primary" id="againBtn" type="button">Làm lại chủ đề này</button>
+          <button class="btn btn-ghost" id="homeBtn" type="button">Chọn chủ đề khác</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- ══════════ SỔ TAY ══════════ -->
+    <section class="screen" id="screen-handbook">
+      <div class="practice-head">
+        <button class="ghost-btn" id="handbookBack" type="button">← Quay lại</button>
+        <div class="practice-meta"><span>Sổ tay kiến thức Toán lớp 2</span></div>
+      </div>
+      <div id="handbookBody"></div>
+    </section>
+  </main>
+
+  <?!= include('Questions') ?>
+  <?!= include('App') ?>
+</body>
+</html>

@@ -1,0 +1,1082 @@
+<script>
+/* ═══════════════════════════════════════════════════════════
+   Toán Lớp 2 · bộ sinh câu hỏi theo mạch kiến thức SGK
+   Mỗi hàm sinh trả về một câu hỏi dạng:
+   { type: 'input'|'choice', prompt, visual, options, answer, hint, explanation }
+   ═══════════════════════════════════════════════════════════ */
+(function (root, factory) {
+  const api = factory();
+  root.ToanQuestions = api;
+  if (typeof module !== 'undefined' && module.exports) module.exports = api;
+})(typeof globalThis !== 'undefined' ? globalThis : this, function () {
+  'use strict';
+
+  const UNITS = ['không', 'một', 'hai', 'ba', 'bốn', 'năm', 'sáu', 'bảy', 'tám', 'chín'];
+  const randInt = (a, b) => a + Math.floor(Math.random() * (b - a + 1));
+  const pick = (arr) => arr[randInt(0, arr.length - 1)];
+
+  function shuffle(arr) {
+    const a = arr.slice();
+    for (let i = a.length - 1; i > 0; i--) {
+      const j = randInt(0, i);
+      [a[i], a[j]] = [a[j], a[i]];
+    }
+    return a;
+  }
+
+  /* ── đọc số, cấu tạo số ── */
+  function docSo(n) {
+    if (n === 1000) return 'một nghìn';
+    if (n < 10) return UNITS[n];
+    if (n < 100) {
+      const c = Math.floor(n / 10);
+      const d = n % 10;
+      if (c === 1) return d === 0 ? 'mười' : 'mười ' + (d === 5 ? 'lăm' : UNITS[d]);
+      const base = UNITS[c] + ' mươi';
+      if (d === 0) return base;
+      if (d === 1) return base + ' mốt';
+      if (d === 5) return base + ' lăm';
+      return base + ' ' + UNITS[d];
+    }
+    const tram = Math.floor(n / 100);
+    const rest = n % 100;
+    const head = UNITS[tram] + ' trăm';
+    if (rest === 0) return head;
+    if (rest < 10) return head + ' linh ' + UNITS[rest];
+    return head + ' ' + docSo(rest);
+  }
+
+  const digits = (n) => ({
+    h: Math.floor(n / 100),
+    t: Math.floor(n / 10) % 10,
+    u: n % 10,
+  });
+
+  function cauTao(n) {
+    const { h, t, u } = digits(n);
+    return h > 0
+      ? `${h} trăm, ${t} chục, ${u} đơn vị`
+      : `${t} chục, ${u} đơn vị`;
+  }
+
+  function giaiThichSoSanh(a, b) {
+    const A = digits(a);
+    const B = digits(b);
+    if (a === b) return `${a} bằng ${b} vì các hàng đều bằng nhau.`;
+    const longer = String(a).length !== String(b).length;
+    if (longer) {
+      return `${a} và ${b} khác số chữ số, số có nhiều chữ số hơn thì lớn hơn.`;
+    }
+    const hang = ['hàng trăm', 'hàng chục', 'hàng đơn vị'];
+    const av = [A.h, A.t, A.u];
+    const bv = [B.h, B.t, B.u];
+    for (let i = 0; i < 3; i++) {
+      if (av[i] !== bv[i]) {
+        return `Cùng số chữ số, so sánh từ trái sang phải: ${hang[i]} ${av[i]} ${av[i] > bv[i] ? '>' : '<'} ${bv[i]}, nên ${a} ${a > b ? '>' : '<'} ${b}.`;
+      }
+    }
+    return `Hai số bằng nhau.`;
+  }
+
+  /* ── lời giải phép cộng có nhớ ── */
+  function narTong(a, b) {
+    const A = digits(a);
+    const B = digits(b);
+    const hasHundreds = a >= 100 || b >= 100;
+    const lines = [`Đặt tính rồi tính ${a} + ${b}:`];
+
+    const us = A.u + B.u;
+    const ud = us % 10;
+    let carry = Math.floor(us / 10);
+    lines.push(us >= 10
+      ? `• Hàng đơn vị: ${A.u} + ${B.u} = ${us}, viết ${ud} nhớ 1.`
+      : `• Hàng đơn vị: ${A.u} + ${B.u} = ${ud}, viết ${ud}.`);
+
+    const ts = A.t + B.t + carry;
+    const td = ts % 10;
+    const carry2 = Math.floor(ts / 10);
+    const note = carry ? ` + 1 (nhớ)` : '';
+    lines.push(ts >= 10
+      ? `• Hàng chục: ${A.t} + ${B.t}${note} = ${ts}, viết ${td} nhớ 1.`
+      : `• Hàng chục: ${A.t} + ${B.t}${note} = ${ts}, viết ${td}.`);
+
+    if (hasHundreds) {
+      const hs = A.h + B.h + carry2;
+      lines.push(`• Hàng trăm: ${A.h} + ${B.h}${carry2 ? ' + 1 (nhớ)' : ''} = ${hs}, viết ${hs}.`);
+    }
+    lines.push(`Vậy ${a} + ${b} = ${a + b}.`);
+    return lines.join('\n');
+  }
+
+  /* ── lời giải phép trừ có mượn ── */
+  function narTru(a, b) {
+    const A = digits(a);
+    const B = digits(b);
+    const hasHundreds = a >= 100 || b >= 100;
+    const av = [A.h, A.t, A.u];
+    const bv = [B.h, B.t, B.u];
+    const names = ['trăm', 'chục', 'đơn vị'];
+    const w = av.slice();
+    const lines = [`Đặt tính rồi tính ${a} - ${b}:`];
+
+    for (let i = 2; i >= 0; i--) {
+      if (i === 0 && !hasHundreds) continue;
+      let v = w[i];
+      let borrow = '';
+      if (v < bv[i]) {
+        v += 10;
+        w[i - 1] -= 1;
+        borrow = `${v - 10} không trừ được ${bv[i]}, mượn 1 ${names[i - 1]} được ${v}: `;
+      }
+      const res = v - bv[i];
+      lines.push(`• Hàng ${names[i]}: ${borrow}${v} - ${bv[i]} = ${res}, viết ${res}.`);
+    }
+    lines.push(`Vậy ${a} - ${b} = ${a - b}.`);
+    return lines.join('\n');
+  }
+
+  /* ── tạo câu hỏi ── */
+  let seq = 0;
+  function inputQ(o) {
+    return Object.assign({
+      id: ++seq,
+      type: 'input',
+      visual: '',
+      options: [],
+      hint: '',
+      explanation: '',
+    }, o, { answer: String(o.answer) });
+  }
+
+  function choiceQ(o) {
+    return Object.assign({
+      id: ++seq,
+      type: 'choice',
+      visual: '',
+      hint: '',
+      explanation: '',
+    }, o, {
+      options: shuffle(o.options.slice()),
+      answer: String(o.answer),
+    });
+  }
+
+  /* các số gần đúng để làm phương án nhiễu */
+  function nearNumbers(correct, count) {
+    const set = new Set([correct]);
+    const deltas = [1, -1, 2, -2, 9, -9, 10, -10, 11, -11, 20, -20, 100, -100];
+    let guard = 0;
+    while (set.size < count && guard++ < 300) {
+      const cand = Math.random() < 0.75 ? correct + pick(deltas) : correct + randInt(-30, 30);
+      if (cand >= 0 && cand !== correct) set.add(cand);
+    }
+    return shuffle([...set]);
+  }
+
+  /* ── hình vẽ ── */
+  const SHAPES = {
+    'tam-giac': { name: 'hình tam giác', color: '#6c5ce7', body: '<polygon points="50,8 92,88 8,88" />' },
+    'tu-giac': { name: 'hình tứ giác', color: '#f08c2e', body: '<polygon points="14,18 80,10 90,80 20,92" />' },
+    'chu-nhat': { name: 'hình chữ nhật', color: '#0d9a9a', body: '<rect x="6" y="24" width="88" height="52" rx="4" />' },
+    'vuong': { name: 'hình vuông', color: '#ec4f83', body: '<rect x="16" y="16" width="68" height="68" rx="4" />' },
+    'tron': { name: 'hình tròn', color: '#2f7fe8', body: '<circle cx="50" cy="50" r="40" />' },
+  };
+
+  function shapeSvg(key, size) {
+    const s = SHAPES[key];
+    const px = size || 92;
+    return `<svg class="shape" viewBox="0 0 100 100" width="${px}" height="${px}" fill="${s.color}" opacity="0.92" aria-hidden="true">${s.body}</svg>`;
+  }
+
+  function clockSvg(hour, minute) {
+    const cx = 60;
+    const cy = 60;
+    const ha = (((hour % 12) * 30) + minute * 0.5) * Math.PI / 180;
+    const ma = (minute * 6) * Math.PI / 180;
+    const hx = cx + Math.sin(ha) * 26;
+    const hy = cy - Math.cos(ha) * 26;
+    const mx = cx + Math.sin(ma) * 38;
+    const my = cy - Math.cos(ma) * 38;
+    const num = (x, y, t) => `<text x="${x}" y="${y}" text-anchor="middle" font-size="13" font-weight="700" fill="#221d4d" font-family="system-ui, sans-serif">${t}</text>`;
+    return `<svg class="clock" viewBox="0 0 120 120" width="132" height="132" aria-hidden="true">
+      <circle cx="60" cy="60" r="52" fill="#ffffff" stroke="#221d4d" stroke-width="4" />
+      ${num(60, 28, 12)}${num(97, 65, 3)}${num(60, 102, 6)}${num(23, 65, 9)}
+      <line x1="60" y1="60" x2="${hx.toFixed(1)}" y2="${hy.toFixed(1)}" stroke="#221d4d" stroke-width="6" stroke-linecap="round" />
+      <line x1="60" y1="60" x2="${mx.toFixed(1)}" y2="${my.toFixed(1)}" stroke="#f08c2e" stroke-width="4" stroke-linecap="round" />
+      <circle cx="60" cy="60" r="4" fill="#221d4d" />
+    </svg>`;
+  }
+
+  /* ═══════ MẠCH: SỐ VÀ CHỮ SỐ ═══════ */
+
+  function genDocSo(level) {
+    let n;
+    if (level === 1) n = randInt(21, 99);
+    else if (level === 2) n = randInt(101, 999);
+    else n = Math.random() < 0.25 ? 1000 : randInt(101, 999);
+    const word = docSo(n);
+    return inputQ({
+      prompt: `Số “${word}” được viết là:`,
+      answer: n,
+      hint: 'Đọc từ hàng trăm, hàng chục rồi đến hàng đơn vị.',
+      explanation: `“${word}” viết là ${n}.\nSố ${n} gồm ${cauTao(n)}.`,
+    });
+  }
+
+  function genSoSanh(level) {
+    const max = level === 1 ? 99 : level === 2 ? 999 : 1000;
+    let a = randInt(1, max);
+    let b = randInt(1, max);
+    if (Math.random() < 0.15) b = a;
+    const sign = a > b ? '>' : a < b ? '<' : '=';
+    return choiceQ({
+      prompt: `Điền dấu thích hợp vào chỗ chấm:\n${a} … ${b}`,
+      options: ['>', '<', '='],
+      answer: sign,
+      hint: 'So sánh số chữ số trước, rồi so sánh từng hàng từ trái sang phải.',
+      explanation: giaiThichSoSanh(a, b),
+    });
+  }
+
+  function genLienKe(level) {
+    const n = level === 1 ? randInt(11, 99) : randInt(101, 999);
+    const truoc = Math.random() < 0.5;
+    const ans = truoc ? n - 1 : n + 1;
+    return inputQ({
+      prompt: `Số liền ${truoc ? 'trước' : 'sau'} của ${n} là:`,
+      answer: ans,
+      hint: `Số liền ${truoc ? 'trước' : 'sau'} là số ${truoc ? 'bé hơn' : 'lớn hơn'} ${n} một đơn vị.`,
+      explanation: `${n - 1} ← ${n} → ${n + 1}\nVậy số liền ${truoc ? 'trước' : 'sau'} của ${n} là ${ans}.`,
+    });
+  }
+
+  function genCauTao(level) {
+    const n = level === 1 ? randInt(21, 99) : randInt(101, 999);
+    const { h, t, u } = digits(n);
+    const correct = cauTao(n);
+    const set = new Set([correct]);
+    let guard = 0;
+    while (set.size < 3 && guard++ < 80) {
+      const hv = h > 0 ? Math.max(1, Math.min(9, h + pick([-1, 1, 0]))) : 0;
+      const tv = Math.max(0, Math.min(9, t + pick([-1, 1, 0])));
+      const uv = Math.max(0, Math.min(9, u + pick([-1, 1, 0])));
+      const cand = hv > 0
+        ? `${hv} trăm, ${tv} chục, ${uv} đơn vị`
+        : `${tv} chục, ${uv} đơn vị`;
+      set.add(cand);
+    }
+    return choiceQ({
+      prompt: `Số ${n} gồm những hàng nào?`,
+      options: [...set],
+      answer: correct,
+      hint: 'Đọc số theo thứ tự hàng trăm, hàng chục, hàng đơn vị.',
+      explanation: `Số ${n} gồm ${correct}.`,
+    });
+  }
+
+  function genLonNhat(level) {
+    const pool = [];
+    const max = level === 1 ? 99 : 999;
+    while (pool.length < 3) {
+      const v = randInt(level === 1 ? 11 : 101, max);
+      if (!pool.includes(v)) pool.push(v);
+    }
+    const askMax = Math.random() < 0.55;
+    const sorted = pool.slice().sort((x, y) => x - y);
+    const ans = askMax ? sorted[2] : sorted[0];
+    return choiceQ({
+      prompt: `Trong các số sau, số nào ${askMax ? 'lớn nhất' : 'bé nhất'}?\n${pool.join(' ; ')}`,
+      options: pool.map(String),
+      answer: String(ans),
+      hint: 'So sánh các số với nhau, chú ý số có nhiều chữ số hơn.',
+      explanation: `Sắp xếp từ bé đến lớn: ${sorted.join(' < ')}.\nVậy số ${askMax ? 'lớn nhất' : 'bé nhất'} là ${ans}.`,
+    });
+  }
+
+  function genDaySo(level) {
+    const steps = level === 1 ? [2, 5, 10] : level === 2 ? [2, 3, 4, 5, 10] : [2, 3, 4, 5, 10, 100];
+    const step = pick(steps);
+    const reps = level === 3 ? 6 : 5;
+    const start = step * randInt(1, reps);
+    const list = [0, 1, 2, 3].map((i) => start + i * step);
+    const next = start + 4 * step;
+    return inputQ({
+      prompt: `Điền số tiếp theo của dãy số:\n${list.join(', ')}, …`,
+      answer: next,
+      hint: `Mỗi số trong dãy hơn số đứng liền trước ${step} đơn vị.`,
+      explanation: `${list[3]} + ${step} = ${next}.\nVậy số tiếp theo là ${next}.`,
+    });
+  }
+
+  /* ═══════ MẠCH: CỘNG, TRỪ TRONG PHẠM VI 100 ═══════ */
+
+  function genCong100(level) {
+    let a;
+    let b;
+    if (level === 1) {
+      const ta = randInt(1, 4);
+      const tb = randInt(1, 8 - ta);
+      const ua = randInt(1, 5);
+      const ub = randInt(1, 9 - ua);
+      a = ta * 10 + ua;
+      b = tb * 10 + ub;
+    } else {
+      const ta = randInt(1, 4);
+      const tb = randInt(1, 8 - ta);
+      const ua = randInt(3, 9);
+      const ub = randInt(10 - ua, 9);
+      a = ta * 10 + ua;
+      b = tb * 10 + ub;
+    }
+    return inputQ({
+      prompt: `Đặt tính rồi tính:\n${a} + ${b}`,
+      answer: a + b,
+      hint: 'Cộng từ hàng đơn vị sang hàng chục, nhớ 1 khi tổng lớn hơn 9.',
+      explanation: narTong(a, b),
+    });
+  }
+
+  function genTru100(level) {
+    let a;
+    let b;
+    if (level === 1) {
+      const ta = randInt(2, 9);
+      const tb = randInt(1, ta);
+      const ua = randInt(1, 9);
+      const ub = randInt(1, ua);
+      a = ta * 10 + ua;
+      b = tb * 10 + ub;
+    } else {
+      const ta = randInt(2, 9);
+      const tb = randInt(1, ta - 1);
+      const ua = randInt(1, 8);
+      const ub = randInt(ua + 1, 9);
+      a = ta * 10 + ua;
+      b = tb * 10 + ub;
+    }
+    return inputQ({
+      prompt: `Đặt tính rồi tính:\n${a} - ${b}`,
+      answer: a - b,
+      hint: 'Trừ từ hàng đơn vị sang hàng chục, mượn 1 chục khi không trừ được.',
+      explanation: narTru(a, b),
+    });
+  }
+
+  function genTimX100(level) {
+    const max = level === 1 ? 60 : 99;
+    const kind = pick(['cong', 'tru', 'cong']);
+    let prompt;
+    let ans;
+    let explain;
+    if (kind === 'cong') {
+      const c = randInt(31, max);
+      const a = randInt(11, c - 10);
+      ans = c - a;
+      prompt = `x + ${a} = ${c}`;
+      explain = `Muốn tìm số hạng chưa biết, ta lấy tổng trừ đi số hạng kia:\nx = ${c} - ${a} = ${ans}.`;
+    } else {
+      const a = randInt(11, 40);
+      const c = randInt(11, max - a);
+      ans = c + a;
+      prompt = `x - ${a} = ${c}`;
+      explain = `Muốn tìm số bị trừ, ta lấy hiệu cộng với số trừ:\nx = ${c} + ${a} = ${ans}.`;
+    }
+    return inputQ({
+      prompt: `Tìm x:\n${prompt}`,
+      answer: ans,
+      hint: 'Nêu tên thành phần chưa biết rồi chọn phép tính thích hợp.',
+      explanation: explain,
+    });
+  }
+
+  function genTinhDay100(level) {
+    const a = randInt(20, 60);
+    const b = randInt(11, 100 - a);
+    const c = randInt(1, a + b - 1);
+    return inputQ({
+      prompt: `Tính:\n${a} + ${b} - ${c}`,
+      answer: a + b - c,
+      hint: 'Tính lần lượt từ trái sang phải.',
+      explanation: `${a} + ${b} = ${a + b}\n${a + b} - ${c} = ${a + b - c}.`,
+    });
+  }
+
+  function genSoSanhBieuThuc100(level) {
+    const a = randInt(20, 55);
+    const b = randInt(11, 40);
+    const left = a + b;
+    const right = left + pick([-10, -1, 0, 1, 10]);
+    const sign = left > right ? '>' : left < right ? '<' : '=';
+    return choiceQ({
+      prompt: `Điền dấu thích hợp:\n${a} + ${b} … ${right}`,
+      options: ['>', '<', '='],
+      answer: sign,
+      hint: 'Tính kết quả bên trái rồi so sánh với số bên phải.',
+      explanation: `${a} + ${b} = ${left}, mà ${left} ${sign} ${right}.\nVậy ${a} + ${b} ${sign} ${right}.`,
+    });
+  }
+
+  /* ═══════ MẠCH: CỘNG, TRỪ TRONG PHẠM VI 1000 ═══════ */
+
+  function genCong1000(level) {
+    let a;
+    let b;
+    if (level === 1) {
+      const ha = randInt(1, 4);
+      const hb = randInt(1, 8 - ha);
+      const ta = randInt(1, 4);
+      const tb = randInt(1, 8 - ta);
+      const ua = randInt(1, 4);
+      const ub = randInt(1, 8 - ua);
+      a = ha * 100 + ta * 10 + ua;
+      b = hb * 100 + tb * 10 + ub;
+    } else {
+      const ha = randInt(1, 4);
+      const hb = randInt(1, 8 - ha);
+      const ta = randInt(2, 9);
+      const tb = randInt(1, 8);
+      const ua = randInt(2, 9);
+      const ub = randInt(10 - ua, 9);
+      a = ha * 100 + ta * 10 + ua;
+      b = hb * 100 + tb * 10 + ub;
+    }
+    return inputQ({
+      prompt: `Đặt tính rồi tính:\n${a} + ${b}`,
+      answer: a + b,
+      hint: 'Cộng từ phải sang trái, nhớ 1 sang hàng bên trái khi tổng lớn hơn 9.',
+      explanation: narTong(a, b),
+    });
+  }
+
+  function genTru1000(level) {
+    let a;
+    let b;
+    let guard = 0;
+    do {
+      const ha = randInt(2, 9);
+      const hb = randInt(1, ha - 1);
+      const ta = level === 1 ? randInt(2, 9) : randInt(1, 9);
+      const tb = level === 1 ? randInt(0, ta) : randInt(0, 9);
+      const ua = randInt(1, 9);
+      const ub = level === 1 ? randInt(0, ua) : randInt(1, 9);
+      a = ha * 100 + ta * 10 + ua;
+      b = hb * 100 + tb * 10 + ub;
+    } while (level !== 1 && !(a % 10 < b % 10 || Math.floor(a / 10) % 10 < Math.floor(b / 10) % 10) && guard++ < 200);
+    return inputQ({
+      prompt: `Đặt tính rồi tính:\n${a} - ${b}`,
+      answer: a - b,
+      hint: 'Trừ từ phải sang trái, mượn 1 đơn vị của hàng bên trái khi không trừ được.',
+      explanation: narTru(a, b),
+    });
+  }
+
+  function genNham1000(level) {
+    const kind = pick(['tram', 'chuc', 'tram']);
+    let prompt;
+    let ans;
+    if (kind === 'tram') {
+      const a = randInt(2, 8) * 100;
+      const b = randInt(1, 9 - a / 100) * 100;
+      if (Math.random() < 0.5) {
+        prompt = `${a} + ${b}`;
+        ans = a + b;
+      } else {
+        prompt = `${a + b} - ${b}`;
+        ans = a;
+      }
+    } else {
+      const a = randInt(2, 8) * 100 + randInt(1, 7) * 10;
+      const b = randInt(1, 4) * 10;
+      prompt = `${a} + ${b}`;
+      ans = a + b;
+    }
+    return inputQ({
+      prompt: `Tính nhẩm:\n${prompt} = ?`,
+      answer: ans,
+      hint: 'Tách số theo hàng trăm, hàng chục rồi tính nhẩm.',
+      explanation: `${prompt} = ${ans}.`,
+    });
+  }
+
+  function genTimX1000(level) {
+    const kind = pick(['cong', 'tru']);
+    if (kind === 'cong') {
+      const c = randInt(400, 999);
+      const a = randInt(100, c - 100);
+      const x = c - a;
+      return inputQ({
+        prompt: `Tìm x:\nx + ${a} = ${c}`,
+        answer: x,
+        hint: 'Số hạng chưa biết = tổng − số hạng đã biết.',
+        explanation: `x = ${c} - ${a} = ${x}.`,
+      });
+    }
+    const a = randInt(120, 400);
+    const c = randInt(150, 500);
+    const x = c + a;
+    return inputQ({
+      prompt: `Tìm x:\nx - ${a} = ${c}`,
+      answer: x,
+      hint: 'Số bị trừ = hiệu + số trừ.',
+      explanation: `x = ${c} + ${a} = ${x}.`,
+    });
+  }
+
+  function genSoSanh1000(level) {
+    const a = randInt(100, 600);
+    const b = randInt(100, 300);
+    const left = a + b;
+    const right = left + pick([-100, -10, -1, 0, 1, 10, 100]);
+    const sign = left > right ? '>' : left < right ? '<' : '=';
+    return choiceQ({
+      prompt: `Điền dấu thích hợp:\n${a} + ${b} … ${right}`,
+      options: ['>', '<', '='],
+      answer: sign,
+      hint: 'Tính tổng bên trái rồi so sánh với số bên phải.',
+      explanation: `${a} + ${b} = ${left}, mà ${left} ${sign} ${right}.`,
+    });
+  }
+
+  /* ═══════ MẠCH: PHÉP NHÂN ═══════ */
+
+  const BANG_NHAN = [2, 3, 4, 5];
+  const DO_VAT_DEM = ['cái kẹo', 'cái bút', 'cái bánh', 'viên bi', 'quả bóng', 'quyển vở'];
+  const DO_VAT = ['quả cam', 'con gà', 'con thỏ', 'bông hoa', 'con cá', 'cái bút', 'cái kẹo', 'quyển vở'];
+  const TEN = ['Lan', 'Mai', 'Nam', 'Hùng', 'Vy', 'Bảo', 'Hà', 'Minh', 'An', 'Khoa', 'Linh', 'Phúc'];
+
+  function genBangNhan(level) {
+    const tables = level === 1 ? [2, 3] : BANG_NHAN;
+    const a = pick(tables);
+    const b = randInt(1, level === 1 ? 5 : 10);
+    const ans = a * b;
+    return inputQ({
+      prompt: `${a} × ${b} = ?`,
+      answer: ans,
+      hint: `Đọc bảng nhân ${a}: ${a} × ${b} là ${a} được lấy ${b} lần.`,
+      explanation: `${a} × ${b} nghĩa là ${a} được lấy ${b} lần.\nTheo bảng nhân ${a}: ${a} × ${b} = ${ans}.`,
+    });
+  }
+
+  function genNhanLoiVan(level) {
+    const a = pick(level === 1 ? [2, 3] : BANG_NHAN);
+    const b = randInt(2, level === 1 ? 4 : 8);
+    const obj = pick(DO_VAT_DEM);
+    const thung = pick(['hộp', 'túi', 'giỏ', 'khay']);
+    const ans = a * b;
+    return inputQ({
+      prompt: `Mỗi ${thung} có ${a} ${obj}. Hỏi ${b} ${thung} như thế có tất cả bao nhiêu ${obj}?`,
+      answer: ans,
+      hint: `Mỗi ${thung} có ${a} ${obj}, lấy ${b} lần như vậy nên dùng phép nhân.`,
+      explanation: `Số ${obj} ở ${b} ${thung} là:\n${a} × ${b} = ${ans}.\nĐáp số: ${ans} ${obj}.`,
+    });
+  }
+
+  function genThuaSo(level) {
+    const a = pick(level === 1 ? [2, 3] : BANG_NHAN);
+    const b = randInt(1, level === 1 ? 5 : 10);
+    const p = a * b;
+    return inputQ({
+      prompt: `Tìm số thích hợp điền vào ô trống:\n☐ × ${a} = ${p}`,
+      answer: b,
+      hint: 'Thừa số chưa biết = tích chia cho thừa số đã biết.',
+      explanation: `Vì ${b} × ${a} = ${p} nên ô trống là ${b}.`,
+    });
+  }
+
+  function genNhanSoSanh(level) {
+    const a = pick([2, 3, 4, 5]);
+    const b = randInt(2, 6);
+    const left = a * b;
+    const right = left + pick([-5, -1, 0, 1, 5]);
+    const sign = left > right ? '>' : left < right ? '<' : '=';
+    return choiceQ({
+      prompt: `Điền dấu thích hợp:\n${a} × ${b} … ${right}`,
+      options: ['>', '<', '='],
+      answer: sign,
+      hint: 'Tính tích rồi so sánh với số bên phải.',
+      explanation: `${a} × ${b} = ${left}, mà ${left} ${sign} ${right}.`,
+    });
+  }
+
+  /* ═══════ MẠCH: PHÉP CHIA ═══════ */
+
+  function genBangChia(level) {
+    const tables = level === 1 ? [2, 3] : BANG_NHAN;
+    const b = pick(tables);
+    const c = randInt(1, level === 1 ? 5 : 10);
+    const n = b * c;
+    return inputQ({
+      prompt: `${n} : ${b} = ?`,
+      answer: c,
+      hint: `Tìm số nào nhân với ${b} được ${n}.`,
+      explanation: `Vì ${b} × ${c} = ${n} nên ${n} : ${b} = ${c}.`,
+    });
+  }
+
+  function genQuanHeNhanChia(level) {
+    const b = pick(level === 1 ? [2, 3] : BANG_NHAN);
+    const c = randInt(2, level === 1 ? 5 : 9);
+    const n = b * c;
+    return inputQ({
+      prompt: `${b} × ${c} = ${n}.\nVậy ${n} : ${b} = ?`,
+      answer: c,
+      hint: 'Từ một phép nhân ta viết được hai phép chia.',
+      explanation: `${b} × ${c} = ${n} nên ${n} : ${b} = ${c} và ${n} : ${c} = ${b}.`,
+    });
+  }
+
+  function genChiaDeu(level) {
+    const b = pick(level === 1 ? [2, 3] : BANG_NHAN);
+    const c = randInt(2, level === 1 ? 4 : 8);
+    const n = b * c;
+    const obj = pick(DO_VAT_DEM);
+    return inputQ({
+      prompt: `Có ${n} ${obj} chia đều cho ${b} bạn. Hỏi mỗi bạn được mấy ${obj}?`,
+      answer: c,
+      hint: `Chia đều ${n} ${obj} cho ${b} bạn nên dùng phép chia ${n} : ${b}.`,
+      explanation: `Mỗi bạn được số ${obj} là:\n${n} : ${b} = ${c} (${obj}).\nĐáp số: ${c} ${obj}.`,
+    });
+  }
+
+  function genSoBiChia(level) {
+    const b = pick(level === 1 ? [2, 3] : BANG_NHAN);
+    const c = randInt(2, level === 1 ? 5 : 9);
+    return inputQ({
+      prompt: `Tìm số thích hợp điền vào ô trống:\n☐ : ${b} = ${c}`,
+      answer: b * c,
+      hint: 'Số bị chia = thương nhân với số chia.',
+      explanation: `Số bị chia là ${c} × ${b} = ${b * c}.`,
+    });
+  }
+
+  /* ═══════ MẠCH: ĐẠI LƯỢNG VÀ ĐO ĐẠI LƯỢNG ═══════ */
+
+  function genDoDai(level) {
+    const items = level === 1
+      ? [
+        { q: '1 m = … cm', a: 100, why: '1 m = 100 cm' },
+        { q: '1 m = … dm', a: 10, why: '1 m = 10 dm' },
+        { q: '1 dm = … cm', a: 10, why: '1 dm = 10 cm' },
+        { q: '5 dm = … cm', a: 50, why: '1 dm = 10 cm nên 5 dm = 5 × 10 = 50 cm' },
+      ]
+      : level === 2
+        ? [
+          { q: '1 km = … m', a: 1000, why: '1 km = 1000 m' },
+          { q: '1 m = … cm', a: 100, why: '1 m = 100 cm' },
+          { q: '3 m = … cm', a: 300, why: '1 m = 100 cm nên 3 m = 3 × 100 = 300 cm' },
+          { q: '1 cm = … mm', a: 10, why: '1 cm = 10 mm' },
+          { q: '40 mm = … cm', a: 4, why: '10 mm = 1 cm nên 40 mm = 4 cm' },
+          { q: '1 m 25 cm = … cm', a: 125, why: '1 m = 100 cm, thêm 25 cm được 125 cm' },
+        ]
+        : [
+          { q: '2 km = … m', a: 2000, why: '1 km = 1000 m nên 2 km = 2000 m' },
+          { q: '1 m = … mm', a: 1000, why: '1 m = 100 cm = 1000 mm' },
+          { q: '1 m 5 cm = … cm', a: 105, why: '1 m = 100 cm, thêm 5 cm được 105 cm' },
+          { q: '90 mm = … cm', a: 9, why: '10 mm = 1 cm nên 90 mm = 9 cm' },
+          { q: '7 m 40 cm = … cm', a: 740, why: '7 m = 700 cm, thêm 40 cm được 740 cm' },
+        ];
+    const it = pick(items);
+    return inputQ({
+      prompt: `Điền số thích hợp:\n${it.q}`,
+      answer: it.a,
+      hint: '1 m = 10 dm = 100 cm = 1000 mm; 1 km = 1000 m; 1 cm = 10 mm.',
+      explanation: `${it.why}.`,
+    });
+  }
+
+  function genDoDaiLoiVan(level) {
+    const max = level === 1 ? 60 : 900;
+    const a = randInt(20, max);
+    const b = randInt(5, a - 5);
+    const donVi = pick(['cm', 'dm', 'm']);
+    return inputQ({
+      prompt: `Đoạn thẳng AB dài ${a} ${donVi}, đoạn thẳng CD dài ${b} ${donVi}. Hỏi đoạn thẳng AB dài hơn đoạn thẳng CD bao nhiêu ${donVi}?`,
+      answer: a - b,
+      hint: 'Hỏi “dài hơn bao nhiêu” nên làm phép trừ.',
+      explanation: `Đoạn AB dài hơn đoạn CD là:\n${a} - ${b} = ${a - b} (${donVi}).`,
+    });
+  }
+
+  function genKhoiLuong(level) {
+    if (level === 3) {
+      const items = [
+        { q: '1 kg = … g', a: 1000, why: '1 kg = 1000 g' },
+        { q: '3 kg = … g', a: 3000, why: '1 kg = 1000 g nên 3 kg = 3000 g' },
+      ];
+      const it = pick(items);
+      return inputQ({
+        prompt: `Điền số thích hợp:\n${it.q}`,
+        answer: it.a,
+        hint: '1 kg = 1000 g',
+        explanation: `${it.why}.`,
+      });
+    }
+    const a = randInt(2, 12);
+    const b = randInt(2, 15);
+    return inputQ({
+      prompt: `Con gà nặng ${a} kg, con vịt nặng ${b} kg. Hỏi cả hai con nặng bao nhiêu ki-lô-gam?`,
+      answer: a + b,
+      hint: 'Hỏi “cả hai” nên làm phép cộng.',
+      explanation: `Cả hai con nặng là:\n${a} + ${b} = ${a + b} (kg).`,
+    });
+  }
+
+  function genDungTich(level) {
+    const a = randInt(12, 30);
+    const b = randInt(3, a - 2);
+    return inputQ({
+      prompt: `Bình có ${a} l nước, mẹ đã dùng ${b} l. Hỏi trong bình còn lại bao nhiêu lít nước?`,
+      answer: a - b,
+      hint: '“Còn lại” thì làm phép trừ.',
+      explanation: `Trong bình còn lại:\n${a} - ${b} = ${a - b} (l).`,
+    });
+  }
+
+  function genThoiGian(level) {
+    const facts = level === 1
+      ? [
+        { q: '1 giờ = … phút', a: 60, why: '1 giờ = 60 phút' },
+        { q: '1 tuần = … ngày', a: 7, why: '1 tuần = 7 ngày' },
+      ]
+      : [
+        { q: '1 giờ = … phút', a: 60, why: '1 giờ = 60 phút' },
+        { q: '1 ngày = … giờ', a: 24, why: '1 ngày = 24 giờ' },
+        { q: '1 tuần = … ngày', a: 7, why: '1 tuần = 7 ngày' },
+        { q: 'Tháng 4 có … ngày', a: 30, why: 'Tháng 4 có 30 ngày' },
+        { q: 'Tháng 12 có … ngày', a: 31, why: 'Tháng 12 có 31 ngày' },
+      ];
+    const it = pick(facts);
+    return inputQ({
+      prompt: `Điền số thích hợp:\n${it.q}`,
+      answer: it.a,
+      hint: 'Nhớ: 1 giờ = 60 phút, 1 ngày = 24 giờ, 1 tuần = 7 ngày.',
+      explanation: `${it.why}.`,
+    });
+  }
+
+  function genDongHo(level) {
+    const minutes = level === 1 ? [0, 30] : level === 2 ? [0, 15, 30, 45] : [0, 5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55];
+    const h = randInt(1, 12);
+    const m = pick(minutes);
+    const label = (hh, mm) => (mm === 0 ? `${hh} giờ` : `${hh} giờ ${mm} phút`);
+    const correct = label(h, m);
+    const set = new Set([correct]);
+    let guard = 0;
+    while (set.size < 3 && guard++ < 100) {
+      const dh = h + pick([-2, -1, 1, 2]);
+      const dm = m + pick([-30, -15, -5, 5, 15, 30]);
+      const hh = ((dh - 1 + 12) % 12) + 1;
+      const mm = ((dm % 60) + 60) % 60;
+      set.add(label(hh, mm));
+    }
+    return choiceQ({
+      prompt: 'Đồng hồ chỉ mấy giờ?',
+      visual: clockSvg(h, m),
+      options: [...set],
+      answer: correct,
+      hint: 'Kim ngắn chỉ giờ, kim dài chỉ phút. Mỗi số lớn trên mặt đồng hồ là 5 phút.',
+      explanation: m === 0
+        ? `Kim ngắn chỉ đúng số ${h}, kim dài chỉ số 12 nên đồng hồ chỉ ${correct}.`
+        : `Kim ngắn chỉ qua số ${h}, kim dài chỉ số ${m / 5} (${m} phút) nên đồng hồ chỉ ${correct}.`,
+    });
+  }
+
+  function genTien(level) {
+    if (level === 1) {
+      const co = pick([5000, 8000, 10000]);
+      const mua = pick([2000, 3000, 4000]);
+      return inputQ({
+        prompt: `Mẹ có ${co} đồng, mẹ mua rau hết ${mua} đồng. Hỏi mẹ còn lại bao nhiêu đồng?`,
+        answer: co - mua,
+        hint: '“Còn lại” thì làm phép trừ.',
+        explanation: `Mẹ còn lại:\n${co} - ${mua} = ${co - mua} (đồng).`,
+      });
+    }
+    if (level === 2) {
+      const a = pick([2000, 3000, 4000]);
+      const b = pick([1000, 2000, 3000]);
+      return inputQ({
+        prompt: `Mẹ mua một gói bánh giá ${a} đồng và một hộp sữa giá ${b} đồng. Hỏi mẹ phải trả tất cả bao nhiêu đồng?`,
+        answer: a + b,
+        hint: 'Hỏi “tất cả” thì làm phép cộng.',
+        explanation: `Mẹ phải trả tất cả:\n${a} + ${b} = ${a + b} (đồng).`,
+      });
+    }
+    const gia = pick([2000, 3000]);
+    const soLuong = randInt(2, 3);
+    const co = 10000;
+    const tong = gia * soLuong;
+    return inputQ({
+      prompt: `Mẹ có ${co} đồng, mua ${soLuong} chiếc bút chì, mỗi chiếc giá ${gia} đồng. Hỏi mẹ còn lại bao nhiêu đồng?`,
+      answer: co - tong,
+      hint: 'Tính số tiền mua bút trước, rồi lấy số tiền mẹ có trừ đi.',
+      explanation: `Tiền mua bút: ${gia} × ${soLuong} = ${tong} (đồng).\nMẹ còn lại: ${co} - ${tong} = ${co - tong} (đồng).`,
+    });
+  }
+
+  function genNhietDo() {
+    const it = pick([
+      { q: 'Nước đá đang tan có nhiệt độ là … °C', a: 0, why: 'Nước đá đang tan có nhiệt độ 0 °C' },
+      { q: 'Nước sôi có nhiệt độ là … °C', a: 100, why: 'Nước sôi có nhiệt độ 100 °C' },
+    ]);
+    return inputQ({
+      prompt: `Điền số thích hợp:\n${it.q}`,
+      answer: it.a,
+      hint: 'Nước đá đang tan ở 0 °C.',
+      explanation: `${it.why}.`,
+    });
+  }
+
+  /* ═══════ MẠCH: HÌNH HỌC ═══════ */
+
+  const HINH_FACT = {
+    'tam-giac': 'Hình tam giác có 3 cạnh và 3 đỉnh.',
+    'tu-giac': 'Hình tứ giác có 4 cạnh và 4 đỉnh.',
+    'chu-nhat': 'Hình chữ nhật có 4 cạnh và 4 góc vuông, hai cạnh dài bằng nhau, hai cạnh ngắn bằng nhau.',
+    'vuong': 'Hình vuông có 4 cạnh bằng nhau và 4 góc vuông.',
+    'tron': 'Hình tròn không có cạnh, đường bao quanh là đường tròn.',
+  };
+
+  function genNhanDangHinh() {
+    const keys = Object.keys(SHAPES);
+    const key = pick(keys);
+    const others = shuffle(keys.filter((k) => k !== key)).slice(0, 3);
+    return choiceQ({
+      prompt: 'Hình vẽ dưới đây là hình gì?',
+      visual: shapeSvg(key, 110),
+      options: [SHAPES[key].name].concat(others.map((k) => SHAPES[k].name)),
+      answer: SHAPES[key].name,
+      hint: 'Đếm số cạnh: 3 cạnh là hình tam giác, 4 cạnh là hình tứ giác.',
+      explanation: HINH_FACT[key],
+    });
+  }
+
+  function genDemHinh() {
+    const keys = Object.keys(SHAPES);
+    const target = pick(keys);
+    const totalTarget = randInt(2, 5);
+    const othersCount = randInt(2, 4);
+    const list = [];
+    for (let i = 0; i < totalTarget; i++) list.push(target);
+    while (list.length < totalTarget + othersCount) {
+      list.push(pick(keys.filter((k) => k !== target)));
+    }
+    const row = `<div class="shape-row">${shuffle(list).map((k) => shapeSvg(k, 62)).join('')}</div>`;
+    return inputQ({
+      prompt: `Trong hình có bao nhiêu ${SHAPES[target].name}?`,
+      visual: row,
+      answer: totalTarget,
+      hint: `Chỉ đếm ${SHAPES[target].name}, bỏ qua các hình khác.`,
+      explanation: `Đếm riêng ${SHAPES[target].name}: có ${totalTarget} hình.`,
+    });
+  }
+
+  function genDacDiem() {
+    const facts = [
+      { q: 'Hình tam giác có mấy cạnh?', a: 3, why: 'Hình tam giác có 3 cạnh.' },
+      { q: 'Hình tứ giác có mấy cạnh?', a: 4, why: 'Hình tứ giác có 4 cạnh.' },
+      { q: 'Hình vuông có mấy cạnh?', a: 4, why: 'Hình vuông có 4 cạnh bằng nhau.' },
+      { q: 'Hình chữ nhật có mấy góc vuông?', a: 4, why: 'Hình chữ nhật có 4 góc vuông.' },
+      { q: 'Khối lập phương có mấy mặt?', a: 6, why: 'Khối lập phương có 6 mặt là các hình vuông.' },
+      { q: 'Khối hộp chữ nhật có mấy mặt?', a: 6, why: 'Khối hộp chữ nhật có 6 mặt.' },
+    ];
+    const it = pick(facts);
+    return inputQ({
+      prompt: it.q,
+      answer: it.a,
+      hint: 'Nhớ lại đặc điểm các hình đã học.',
+      explanation: it.why,
+    });
+  }
+
+  function genDoVatKhoi() {
+    const set = pick([
+      { q: 'Đồ vật nào có dạng khối trụ?', ans: 'Lon nước', opts: ['Lon nước', 'Quả bóng', 'Hộp sữa', 'Viên bi'], why: 'Lon nước có dạng khối trụ: hai mặt đáy tròn, thân tròn.' },
+      { q: 'Đồ vật nào có dạng khối cầu?', ans: 'Quả bóng', opts: ['Quả bóng', 'Lon nước', 'Hộp bánh', 'Cái bàn'], why: 'Quả bóng có dạng khối cầu.' },
+      { q: 'Đồ vật nào có dạng khối hộp chữ nhật?', ans: 'Hộp sữa', opts: ['Hộp sữa', 'Lon nước', 'Quả bóng', 'Viên bi'], why: 'Hộp sữa có dạng khối hộp chữ nhật.' },
+      { q: 'Đồ vật nào có dạng khối lập phương?', ans: 'Khối rubik', opts: ['Khối rubik', 'Lon nước', 'Quả bóng', 'Cái nồi'], why: 'Khối rubik có 6 mặt là hình vuông nên có dạng khối lập phương.' },
+    ]);
+    return choiceQ({
+      prompt: set.q,
+      options: set.opts,
+      answer: set.ans,
+      hint: 'Quan sát hình dạng bên ngoài của đồ vật.',
+      explanation: set.why,
+    });
+  }
+
+  /* ═══════ MẠCH: GIẢI TOÁN CÓ LỜI VĂN ═══════ */
+
+  function genLoiVanCong(level) {
+    const max = level === 1 ? 40 : level === 2 ? 90 : 800;
+    const a = randInt(12, max - 10);
+    const b = randInt(5, max - a > 5 ? 60 : 5);
+    const obj = pick(DO_VAT);
+    const n = pick(TEN);
+    return inputQ({
+      prompt: `Bạn ${n} có ${a} ${obj}. Mẹ mua thêm ${b} ${obj}. Hỏi bạn ${n} có tất cả bao nhiêu ${obj}?`,
+      answer: a + b,
+      hint: 'Hỏi “tất cả” nên làm phép cộng.',
+      explanation: `Số ${obj} bạn ${n} có tất cả là:\n${a} + ${b} = ${a + b} (${obj}).\nĐáp số: ${a + b} ${obj}.`,
+    });
+  }
+
+  function genLoiVanTru(level) {
+    const max = level === 1 ? 50 : level === 2 ? 100 : 900;
+    const a = randInt(20, max);
+    const b = randInt(4, a - 5);
+    const obj = pick(DO_VAT);
+    return inputQ({
+      prompt: `Cô giáo có ${a} ${obj}. Cô phát cho các bạn ${b} ${obj}. Hỏi cô giáo còn lại bao nhiêu ${obj}?`,
+      answer: a - b,
+      hint: 'Hỏi “còn lại” nên làm phép trừ.',
+      explanation: `Cô giáo còn lại số ${obj} là:\n${a} - ${b} = ${a - b} (${obj}).\nĐáp số: ${a - b} ${obj}.`,
+    });
+  }
+
+  function genLoiVanNhieuHon(level) {
+    const max = level === 1 ? 40 : level === 2 ? 80 : 500;
+    const a = randInt(15, max);
+    const b = randInt(3, 30);
+    const obj = pick(DO_VAT);
+    const [n1, n2] = shuffle(TEN).slice(0, 2);
+    return inputQ({
+      prompt: `Bạn ${n1} có ${a} ${obj}. Bạn ${n2} có nhiều hơn bạn ${n1} ${b} ${obj}. Hỏi bạn ${n2} có bao nhiêu ${obj}?`,
+      answer: a + b,
+      hint: '“Nhiều hơn” thì lấy số đã biết cộng thêm phần hơn.',
+      explanation: `Bạn ${n2} có số ${obj} là:\n${a} + ${b} = ${a + b} (${obj}).\nĐáp số: ${a + b} ${obj}.`,
+    });
+  }
+
+  function genLoiVanItHon(level) {
+    const max = level === 1 ? 50 : level === 2 ? 90 : 600;
+    const a = randInt(20, max);
+    const b = randInt(3, a - 5);
+    const obj = pick(DO_VAT);
+    const [n1, n2] = shuffle(TEN).slice(0, 2);
+    return inputQ({
+      prompt: `Bạn ${n1} có ${a} ${obj}. Bạn ${n2} có ít hơn bạn ${n1} ${b} ${obj}. Hỏi bạn ${n2} có bao nhiêu ${obj}?`,
+      answer: a - b,
+      hint: '“Ít hơn” thì lấy số đã biết trừ đi phần ít hơn.',
+      explanation: `Bạn ${n2} có số ${obj} là:\n${a} - ${b} = ${a - b} (${obj}).\nĐáp số: ${a - b} ${obj}.`,
+    });
+  }
+
+  function genLoiVanHaiBuoc(level) {
+    if (level === 3) {
+      const k = pick([2, 3, 4, 5]);
+      const m = randInt(3, 8);
+      const e = randInt(2, k * m - 2);
+      const obj = pick(DO_VAT_DEM);
+      const thung = pick(['hộp', 'túi', 'khay']);
+      return inputQ({
+        prompt: `Mỗi ${thung} có ${k} ${obj}. Có ${m} ${thung} như thế. Người ta đã bán đi ${e} ${obj}. Hỏi còn lại bao nhiêu ${obj}?`,
+        answer: k * m - e,
+        hint: `Tìm số ${obj} ban đầu bằng phép nhân, rồi trừ số đã bán.`,
+        explanation: `Số ${obj} ban đầu là:\n${k} × ${m} = ${k * m} (${obj}).\nSố ${obj} còn lại là:\n${k * m} - ${e} = ${k * m - e} (${obj}).\nĐáp số: ${k * m - e} ${obj}.`,
+      });
+    }
+    const a = randInt(30, 70);
+    const b = randInt(15, 40);
+    const c = randInt(10, a + b - 15);
+    return inputQ({
+      prompt: `Cửa hàng có ${a} kg gạo. Buổi sáng nhập thêm ${b} kg gạo, buổi chiều bán đi ${c} kg. Hỏi cửa hàng còn lại bao nhiêu ki-lô-gam gạo?`,
+      answer: a + b - c,
+      hint: 'Tính số gạo sau khi nhập thêm, rồi trừ số gạo đã bán.',
+      explanation: `Sau khi nhập thêm cửa hàng có:\n${a} + ${b} = ${a + b} (kg).\nCửa hàng còn lại:\n${a + b} - ${c} = ${a + b - c} (kg).\nĐáp số: ${a + b - c} kg gạo.`,
+    });
+  }
+
+  /* ═══════ DANH SÁCH CHỦ ĐỀ ═══════ */
+
+  const TOPICS = [
+    {
+      id: 'so', name: 'Số và chữ số', icon: '🔢', tone: 'indigo',
+      desc: 'Đọc, viết, so sánh số đến 1000',
+      generators: [genDocSo, genSoSanh, genLienKe, genCauTao, genLonNhat, genDaySo],
+    },
+    {
+      id: 'cong-tru-100', name: 'Cộng, trừ đến 100', icon: '➕', tone: 'orange',
+      desc: 'Đặt tính rồi tính, có nhớ, tìm x',
+      generators: [genCong100, genTru100, genTimX100, genTinhDay100, genSoSanhBieuThuc100],
+    },
+    {
+      id: 'cong-tru-1000', name: 'Cộng, trừ đến 1000', icon: '🧮', tone: 'blue',
+      desc: 'Số có ba chữ số, tính nhẩm',
+      generators: [genCong1000, genTru1000, genNham1000, genTimX1000, genSoSanh1000],
+    },
+    {
+      id: 'nhan', name: 'Phép nhân', icon: '✖️', tone: 'pink',
+      desc: 'Bảng nhân 2, 3, 4, 5 và tìm thừa số',
+      generators: [genBangNhan, genNhanLoiVan, genThuaSo, genNhanSoSanh],
+    },
+    {
+      id: 'chia', name: 'Phép chia', icon: '➗', tone: 'teal',
+      desc: 'Bảng chia 2, 3, 4, 5',
+      generators: [genBangChia, genQuanHeNhanChia, genChiaDeu, genSoBiChia],
+    },
+    {
+      id: 'do-luong', name: 'Đo lường', icon: '📏', tone: 'violet',
+      desc: 'Độ dài, khối lượng, thời gian, tiền',
+      generators: [genDoDai, genDoDaiLoiVan, genKhoiLuong, genDungTich, genThoiGian, genDongHo, genTien, genNhietDo],
+    },
+    {
+      id: 'hinh-hoc', name: 'Hình học', icon: '🔺', tone: 'green',
+      desc: 'Hình phẳng, hình khối, đếm hình',
+      generators: [genNhanDangHinh, genDemHinh, genDacDiem, genDoVatKhoi],
+    },
+    {
+      id: 'loi-van', name: 'Toán có lời văn', icon: '📖', tone: 'orange',
+      desc: 'Giải toán một bước và hai bước',
+      generators: [genLoiVanCong, genLoiVanTru, genLoiVanNhieuHon, genLoiVanItHon, genLoiVanHaiBuoc, genChiaDeu],
+    },
+  ];
+
+  /* ═══════ TẠO MỘT LƯỢT LUYỆN TẬP ═══════ */
+
+  function buildRound(topicId, level, count) {
+    const queue = [];
+    if (topicId === 'hon-hop') {
+      const order = shuffle(TOPICS.slice());
+      const lists = order.map((t) => ({ topicId: t.id, gens: shuffle(t.generators.slice()) }));
+      const longest = Math.max.apply(null, lists.map((l) => l.gens.length));
+      for (let i = 0; i < longest; i++) {
+        lists.forEach((l) => {
+          if (l.gens[i]) queue.push({ topicId: l.topicId, gen: l.gens[i] });
+        });
+      }
+    } else {
+      const topic = TOPICS.find((t) => t.id === topicId);
+      if (!topic) throw new Error('Chủ đề không tồn tại: ' + topicId);
+      shuffle(topic.generators.slice()).forEach((gen) => queue.push({ topicId, gen }));
+    }
+
+    const questions = [];
+    const seen = new Set();
+    let idx = 0;
+    let guard = 0;
+    while (questions.length < count && guard++ < 600) {
+      const item = queue[idx % queue.length];
+      idx++;
+      const q = item.gen(level);
+      const key = q.prompt + '|' + q.answer;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      q.topicId = item.topicId;
+      questions.push(q);
+    }
+    // nếu số câu khác nhau không đủ, bổ sung để lượt luyện luôn đủ câu
+    let extra = 0;
+    while (questions.length < count && extra++ < 200) {
+      const item = queue[idx++ % queue.length];
+      const q = item.gen(level);
+      q.topicId = item.topicId;
+      questions.push(q);
+    }
+    return questions;
+  }
+
+  return { TOPICS: TOPICS, buildRound: buildRound, docSo: docSo, narTong: narTong, narTru: narTru };
+});
+
+</script>
